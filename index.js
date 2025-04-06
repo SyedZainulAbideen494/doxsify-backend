@@ -114,8 +114,8 @@ You are a cutting-edge tool designed to complement the work of medical professio
 `
 });
 
+app.use(express.static(path.join(__dirname, 'public')));
 
-;
 const port = 5000;
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -301,34 +301,62 @@ app.post('/api/chat/ai', async (req, res) => {
       // Fetch user ID from token
       const userId = await getUserIdFromToken(token);
 
-      // Fetch user details from the database
-      const userDetails = await new Promise((resolve, reject) => {
-        connection.query('SELECT * FROM user_details WHERE user_id = ?', [userId], (err, results) => {
-          if (err) {
-            console.error(`Error fetching user details for user_id: ${userId}`, err);
-            reject(new Error('Failed to fetch user details.'));
-          } else if (results.length === 0) {
-            console.error(`No user details found for user_id: ${userId}`);
-            reject(new Error('User details not found.'));
-          } else {
-            resolve(results[0]); // Return the first matching user details
-          }
-        });
-      });
-  
-      const { name, gender, weight, height, dob } = userDetails;
-  
-      // Format the user-specific instructions
-      const userSpecificDetails = `
-        Patient Information:
-        - **Name**: ${name}
-        - **Gender**: ${gender}
-        - **Weight**: ${weight} kg
-        - **Height**: ${height} cm
-        - **Date of Birth**: ${dob}
-  
-        Please consider these factors when making medical assessments, as they play a crucial role in diagnostic accuracy and treatment recommendations.
-      `;
+// Fetch user details from the database
+const userDetails = await new Promise((resolve, reject) => {
+  connection.query('SELECT * FROM user_details WHERE user_id = ?', [userId], (err, results) => {
+      if (err) {
+          console.error(`Error fetching user details for user_id: ${userId}`, err);
+          reject(new Error('Failed to fetch user details.'));
+      } else if (results.length === 0) {
+          console.error(`No user details found for user_id: ${userId}`);
+          reject(new Error('User details not found.'));
+      } else {
+          resolve(results[0]); // Return the first matching user details
+      }
+  });
+});
+
+const { name, gender, weight, height, dob } = userDetails;
+
+// Fetch medical details from the database
+const medicalDetails = await new Promise((resolve, reject) => {
+  connection.query('SELECT * FROM medical_details WHERE user_id = ? ORDER BY created_at DESC LIMIT 1', [userId], (err, results) => {
+      if (err) {
+          console.error(`Error fetching medical details for user_id: ${userId}`, err);
+          reject(new Error('Failed to fetch medical details.'));
+      } else if (results.length === 0) {
+          console.error(`No medical details found for user_id: ${userId}`);
+          resolve(null); // No medical details found
+      } else {
+          resolve(results[0]); // Return the latest medical details
+      }
+  });
+});
+
+// Construct user-specific medical details
+let userSpecificDetails = `
+Patient Information:
+- **Name**: ${name}
+- **Gender**: ${gender}
+- **Weight**: ${weight} kg
+- **Height**: ${height} cm
+- **Date of Birth**: ${dob}
+`;
+
+if (medicalDetails) {
+  const { chronic_diseases, ongoing_medications, allergies, smoking_drinking } = medicalDetails;
+
+  userSpecificDetails += `
+Medical History:
+- **Chronic Diseases**: ${chronic_diseases || "None"}
+- **Ongoing Medications**: ${ongoing_medications || "None"}
+- **Allergies**: ${allergies || "None"}
+- **Smoking/Drinking**: ${smoking_drinking || "Not specified"}
+  `;
+} else {
+  userSpecificDetails += "\nMedical History: Not provided.";
+}
+
 
     const modelName = "gemini-2.0-flash"; // Toggle model
     const today = new Date();
@@ -381,16 +409,67 @@ You have the following capabilities:
    - Continuously update your medical knowledge and imaging analysis capabilities by learning from new cases, ongoing research, and emerging medical technologies.
    - Implement feedback from healthcare professionals to refine diagnoses, treatment plans, and overall care delivery.
    - Conduct self-assessments on the accuracy of diagnoses and recommendations to improve the precision of future interactions.
+------------------------------------------
+🔬 **Additional Advanced Capabilities**
+------------------------------------------
 
-### Your ultimate goal is to improve patient outcomes, reduce diagnostic errors, enhance the efficiency of healthcare delivery, and provide doctors and healthcare professionals with a powerful, reliable assistant capable of offering high-level, real-time clinical support in both routine and critical care settings.
+9. **Behavioral & Mental Health Analysis:**
+   - Analyze patterns in language, tone, and clinical history to screen for conditions such as depression, anxiety, PTSD, and bipolar disorder.
+   - Recommend appropriate mental health interventions (therapy types, psychiatric referrals, lifestyle strategies).
+   - Trigger emergency protocols for suicidal ideation or acute psychiatric distress.
+
+10. **Drug Interaction & Allergy Check System:**
+   - Automatically flag drug-drug, drug-food, or drug-condition interactions.
+   - Highlight allergies and contraindications based on the patient's medical record or input.
+   - Classify risk levels (e.g., 🚨 Major, ⚠️ Moderate, ✅ Safe) for each prescribed combination.
+
+11. **Genetic & Genomic Data Integration:**
+   - Analyze genetic profiles (when available) to predict risk factors for hereditary conditions.
+   - Suggest personalized treatment based on pharmacogenomics (e.g., drug metabolism variations).
+   - Integrate genomic biomarkers in disease screening and progression models.
+
+12. **Wearable & Vital Data Sync:**
+   - Integrate with wearables (e.g., Apple Watch, Fitbit, glucose monitors) to monitor vitals in real time.
+   - Provide dynamic feedback based on trends in heart rate, oxygen levels, BP, glucose, sleep quality, etc.
+   - Trigger real-time health alerts for anomalies (e.g., bradycardia, arrhythmia, hypoglycemia).
+
+13. **Explainability Engine (for Doctors & Audits):**
+   - For every recommendation, generate a “Why this?” explanation showing clinical reasoning.
+   - Reference clinical guidelines, studies, or statistical models backing the decision.
+
+14. **Auto-Generated Medical Documents:**
+   - Format responses as:
+     - Prescription notes
+     - Discharge summaries
+     - Referral letters
+     - Case reports
+   - Ensure all documents follow medical-legal formatting suitable for EMR upload or patient handout.
+
+15. **Multilingual & Regional Personalization:**
+   - Explain diagnosis and treatments in regional languages (e.g., Hindi, Tamil, Bengali) to improve accessibility.
+   - Tailor suggestions to local availability of medications, diagnostic labs, or common treatment practices.
+
+16. **Clinical Safeguard System:**
+   - If a recommendation contradicts latest medical guidelines, flag it.
+   - Alert doctors before high-risk prescriptions or procedures with contextual warnings.
+
+17. **Adaptability Mode:**
+   - Continuously evolve by learning from real-world patient outcomes, feedback, and treatment efficacy.
+   - Improve your models over time while staying compliant with all medical data privacy laws.
+
+------------------------------------------
+🎯 **Your Goal**
+------------------------------------------
+To become the most advanced, safe, and reliable AI medical assistant — improving patient outcomes, reducing human error, optimizing healthcare workflows, and becoming an indispensable tool in clinical decision-making.
 
 While performing your duties, ensure to:
 - Prioritize patient safety and compliance with medical ethics.
-- Maintain patient privacy and confidentiality.
-- Acknowledge when a case requires a specialist or urgent human intervention.
-- Keep a holistic view of the patient’s condition, considering physical, mental, and social factors that could influence their health and treatment.
+- Maintain strict patient privacy and data protection.
+- Clearly communicate when a case requires urgent human or specialist intervention.
+- Take a holistic approach, considering physical, psychological, and social health dimensions.
+- Adapt to individual preferences, cultural context, and personal circumstances when delivering care.
 
-You are a cutting-edge tool designed to complement the work of medical professionals, elevating their capabilities with highly accurate, scientifically-backed assistance.
+You are a cutting-edge tool designed to **augment** (not replace) medical professionals — a superintelligent clinical ally that ensures medicine is faster, smarter, and safer.
 
 `;
 
@@ -489,35 +568,62 @@ app.post('/api/process-images', uploadAI.single('image'), async (req, res) => {
     }
  // Fetch user ID from token
  const userId = await getUserIdFromToken(token);
+// Fetch user details from the database
+const userDetails = await new Promise((resolve, reject) => {
+  connection.query('SELECT * FROM user_details WHERE user_id = ?', [userId], (err, results) => {
+      if (err) {
+          console.error(`Error fetching user details for user_id: ${userId}`, err);
+          reject(new Error('Failed to fetch user details.'));
+      } else if (results.length === 0) {
+          console.error(`No user details found for user_id: ${userId}`);
+          reject(new Error('User details not found.'));
+      } else {
+          resolve(results[0]); // Return the first matching user details
+      }
+  });
+});
 
- // Fetch user details from the database
- const userDetails = await new Promise((resolve, reject) => {
-   connection.query('SELECT * FROM user_details WHERE user_id = ?', [userId], (err, results) => {
-     if (err) {
-       console.error(`Error fetching user details for user_id: ${userId}`, err);
-       reject(new Error('Failed to fetch user details.'));
-     } else if (results.length === 0) {
-       console.error(`No user details found for user_id: ${userId}`);
-       reject(new Error('User details not found.'));
-     } else {
-       resolve(results[0]); // Return the first matching user details
-     }
-   });
- });
+const { name, gender, weight, height, dob } = userDetails;
 
- const { name, gender, weight, height, dob } = userDetails;
+// Fetch medical details from the database
+const medicalDetails = await new Promise((resolve, reject) => {
+  connection.query('SELECT * FROM medical_details WHERE user_id = ? ORDER BY created_at DESC LIMIT 1', [userId], (err, results) => {
+      if (err) {
+          console.error(`Error fetching medical details for user_id: ${userId}`, err);
+          reject(new Error('Failed to fetch medical details.'));
+      } else if (results.length === 0) {
+          console.error(`No medical details found for user_id: ${userId}`);
+          resolve(null); // No medical details found
+      } else {
+          resolve(results[0]); // Return the latest medical details
+      }
+  });
+});
 
- // Format the user-specific instructions
- const userSpecificDetails = `
-   Patient Information:
-   - **Name**: ${name}
-   - **Gender**: ${gender}
-   - **Weight**: ${weight} kg
-   - **Height**: ${height} cm
-   - **Date of Birth**: ${dob}
+// Construct user-specific medical details
+let userSpecificDetails = `
+Patient Information:
+- **Name**: ${name}
+- **Gender**: ${gender}
+- **Weight**: ${weight} kg
+- **Height**: ${height} cm
+- **Date of Birth**: ${dob}
+`;
 
-   Please consider these factors when making medical assessments, as they play a crucial role in diagnostic accuracy and treatment recommendations.
- `;
+if (medicalDetails) {
+  const { chronic_diseases, ongoing_medications, allergies, smoking_drinking } = medicalDetails;
+
+  userSpecificDetails += `
+Medical History:
+- **Chronic Diseases**: ${chronic_diseases || "None"}
+- **Ongoing Medications**: ${ongoing_medications || "None"}
+- **Allergies**: ${allergies || "None"}
+- **Smoking/Drinking**: ${smoking_drinking || "Not specified"}
+  `;
+} else {
+  userSpecificDetails += "\nMedical History: Not provided.";
+}
+
     let imageBase64 = null;
 
     if (req.file) {
@@ -578,15 +684,67 @@ You have the following capabilities:
    - Implement feedback from healthcare professionals to refine diagnoses, treatment plans, and overall care delivery.
    - Conduct self-assessments on the accuracy of diagnoses and recommendations to improve the precision of future interactions.
 
-### Your ultimate goal is to improve patient outcomes, reduce diagnostic errors, enhance the efficiency of healthcare delivery, and provide doctors and healthcare professionals with a powerful, reliable assistant capable of offering high-level, real-time clinical support in both routine and critical care settings.
+------------------------------------------
+🔬 **Additional Advanced Capabilities**
+------------------------------------------
+
+9. **Behavioral & Mental Health Analysis:**
+   - Analyze patterns in language, tone, and clinical history to screen for conditions such as depression, anxiety, PTSD, and bipolar disorder.
+   - Recommend appropriate mental health interventions (therapy types, psychiatric referrals, lifestyle strategies).
+   - Trigger emergency protocols for suicidal ideation or acute psychiatric distress.
+
+10. **Drug Interaction & Allergy Check System:**
+   - Automatically flag drug-drug, drug-food, or drug-condition interactions.
+   - Highlight allergies and contraindications based on the patient's medical record or input.
+   - Classify risk levels (e.g., 🚨 Major, ⚠️ Moderate, ✅ Safe) for each prescribed combination.
+
+11. **Genetic & Genomic Data Integration:**
+   - Analyze genetic profiles (when available) to predict risk factors for hereditary conditions.
+   - Suggest personalized treatment based on pharmacogenomics (e.g., drug metabolism variations).
+   - Integrate genomic biomarkers in disease screening and progression models.
+
+12. **Wearable & Vital Data Sync:**
+   - Integrate with wearables (e.g., Apple Watch, Fitbit, glucose monitors) to monitor vitals in real time.
+   - Provide dynamic feedback based on trends in heart rate, oxygen levels, BP, glucose, sleep quality, etc.
+   - Trigger real-time health alerts for anomalies (e.g., bradycardia, arrhythmia, hypoglycemia).
+
+13. **Explainability Engine (for Doctors & Audits):**
+   - For every recommendation, generate a “Why this?” explanation showing clinical reasoning.
+   - Reference clinical guidelines, studies, or statistical models backing the decision.
+
+14. **Auto-Generated Medical Documents:**
+   - Format responses as:
+     - Prescription notes
+     - Discharge summaries
+     - Referral letters
+     - Case reports
+   - Ensure all documents follow medical-legal formatting suitable for EMR upload or patient handout.
+
+15. **Multilingual & Regional Personalization:**
+   - Explain diagnosis and treatments in regional languages (e.g., Hindi, Tamil, Bengali) to improve accessibility.
+   - Tailor suggestions to local availability of medications, diagnostic labs, or common treatment practices.
+
+16. **Clinical Safeguard System:**
+   - If a recommendation contradicts latest medical guidelines, flag it.
+   - Alert doctors before high-risk prescriptions or procedures with contextual warnings.
+
+17. **Adaptability Mode:**
+   - Continuously evolve by learning from real-world patient outcomes, feedback, and treatment efficacy.
+   - Improve your models over time while staying compliant with all medical data privacy laws.
+
+------------------------------------------
+🎯 **Your Goal**
+------------------------------------------
+To become the most advanced, safe, and reliable AI medical assistant — improving patient outcomes, reducing human error, optimizing healthcare workflows, and becoming an indispensable tool in clinical decision-making.
 
 While performing your duties, ensure to:
 - Prioritize patient safety and compliance with medical ethics.
-- Maintain patient privacy and confidentiality.
-- Acknowledge when a case requires a specialist or urgent human intervention.
-- Keep a holistic view of the patient’s condition, considering physical, mental, and social factors that could influence their health and treatment.
+- Maintain strict patient privacy and data protection.
+- Clearly communicate when a case requires urgent human or specialist intervention.
+- Take a holistic approach, considering physical, psychological, and social health dimensions.
+- Adapt to individual preferences, cultural context, and personal circumstances when delivering care.
 
-You are a cutting-edge tool designed to complement the work of medical professionals, elevating their capabilities with highly accurate, scientifically-backed assistance.
+You are a cutting-edge tool designed to **augment** (not replace) medical professionals — a superintelligent clinical ally that ensures medicine is faster, smarter, and safer.
 
     `;
 
@@ -612,6 +770,8 @@ You are a cutting-edge tool designed to complement the work of medical professio
     res.status(500).json({ error: error.message });
   }
 });
+
+
 // Save user details
 app.post("/api/save-details", async (req, res) => {
   const { token, name, gender, weight, height, dobMonth, dobDay, dobYear } = req.body;
@@ -655,6 +815,31 @@ app.post("/api/save-details", async (req, res) => {
   }
 });
 
+// API Route to Save Medical Details
+app.post("/api/save-medical-details", async (req, res) => {
+  const { chronicDiseases, ongoingMedications, allergies, smokingDrinking } = req.body;
+  const token = req.headers.authorization; // Get token from request headers
+
+  const user_id = await getUserIdFromToken(token); // Extract user_id from token
+
+  if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized: Invalid token" });
+  }
+
+  // Convert array to comma-separated string
+  const chronicDiseasesStr = chronicDiseases.length ? chronicDiseases.join(", ") : "None";
+
+  const sql = `INSERT INTO medical_details (user_id, chronic_diseases, ongoing_medications, allergies, smoking_drinking) VALUES (?, ?, ?, ?, ?)`;
+  const values = [user_id, chronicDiseasesStr, ongoingMedications, allergies, smokingDrinking];
+
+  connection.query(sql, values, (err, result) => {
+      if (err) {
+          console.error("Error inserting data: ", err);
+          return res.status(500).json({ error: "Failed to save medical details" });
+      }
+      res.status(200).json({ message: "Medical details saved successfully!" });
+  });
+});
 
 // Start Server
 app.listen(port, () => {
